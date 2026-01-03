@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Split Screen WebUI — Browser + Mood Board</title>
+  <style>
+    :root {
+      --divider-w: 10px;
+      --min-pane: 20;
+      --bg: #0b0c10; --panel:#111318; --text:#e8ecff; --muted:#9aa3ba; --accent:#8b5cf6;
+    }
+    html, body { height: 100%; margin: 0; }
+    body { background:#0b0c10; color:var(--text); font:14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+
+    .app { position: fixed; inset: 0; display: grid; grid-template-columns: 50% var(--divider-w) 1fr; }
+    .pane { overflow: hidden; background: var(--panel); }
+
+    .divider { background: #2a2f38; cursor: col-resize; position: relative; }
+    .divider::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent, rgba(255,255,255,.06), transparent); pointer-events: none; }
+    .divider .grab { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:4px; height:48px; border-radius:4px; background:rgba(255,255,255,.18); }
+
+    body.dragging, body.dragging * { user-select:none !important; cursor: col-resize !important; }
+
+    .toolbar { display:grid; grid-template-columns:auto 1fr auto auto auto; gap:8px; align-items:center; padding:10px; border-bottom:1px solid #232833; background:linear-gradient(180deg, rgba(0,0,0,.25), rgba(0,0,0,.12)); position:sticky; top:0; z-index:2; }
+    .toolbar button { border:1px solid #242a35; background:#0f1218; color:var(--text); padding:8px 10px; border-radius:10px; cursor:pointer; }
+    .toolbar button:hover{ border-color:var(--accent); }
+    .url { width:100%; border:1px solid #242a35; background:#0f1218; color:var(--text); padding:10px 12px; border-radius:10px; outline:none; }
+    iframe.browser { width:100%; height: calc(100% - 58px); border:0; display:block; background:#0a0c0f; }
+
+    .host { height:100%; display:grid; grid-template-rows:auto 1fr; }
+    .host .header { display:flex; align-items:center; gap:10px; padding:10px; border-bottom:1px solid #232833; background:linear-gradient(180deg, rgba(0,0,0,.25), rgba(0,0,0,.12)); position:sticky; top:0; z-index:2; }
+    .host .header h2 { margin:0; font-size:15px; font-weight:700; color:var(--muted); }
+    .host .header .hint { margin-left:auto; font-size:12px; color:var(--muted); }
+    .host .stage { position:relative; overflow:hidden; }
+
+    .dropzone {
+      position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px;
+      border:4px dashed var(--accent); border-radius:12px; margin:16px; color:var(--text);
+      background: rgba(139,92,246,.1);
+      z-index: 2;
+      text-align:center;
+    }
+    .dropzone.hidden { display:none; }
+    .dropzone .actions { display:flex; gap:8px; }
+    .dropzone button { font-size:16px; padding:14px 20px; border:2px solid var(--accent); background:var(--accent); color:#fff; border-radius:10px; cursor:pointer; font-weight:600; }
+    .dropzone button:hover { background:#7c3aed; }
+
+    iframe#moodFrame { position:absolute; inset:0; width:100%; height:100%; border:0; background:#0b0c10; z-index: 1; pointer-events:auto; }
+  </style>
+</head>
+<body>
+  <div class="app" id="app">
+    <section class="pane" id="leftPane">
+      <div class="toolbar">
+        <button id="backBtn" title="Back">⟵</button>
+        <input id="urlInput" class="url" placeholder="Enter a URL (e.g. https://example.com)" spellcheck="false" />
+        <button id="goBtn" title="Go">Go</button>
+        <button id="reloadBtn" title="Reload">Reload</button>
+        <button id="stopBtn" title="Stop">Stop</button>
+      </div>
+      <iframe id="browserFrame" class="browser" src="about:blank"
+        sandbox="allow-same-origin allow-scripts allow-forms allow-modals allow-popups allow-pointer-lock allow-popups-to-escape-sandbox allow-downloads"
+        referrerpolicy="no-referrer-when-downgrade"
+        allow="clipboard-read; clipboard-write; fullscreen; autoplay; geolocation; microphone; camera; display-capture"></iframe>
+    </section>
+
+    <div class="divider" id="divider"><div class="grab"></div></div>
+
+    <section class="pane host" id="rightPane">
+      <div class="header">
+        <h2>WebUI Console</h2>
+        <span class="hint">Drop <code>webUI HTML</code> here or click Load.</span>
+      </div>
+      <div class="stage">
+        <div class="dropzone" id="dropzone">
+          <div style="font-weight:600; font-size:18px;">Load your app</div>
+          <div style="font-size:14px; color:var(--muted)">Drag & drop the HTML file here, or use the button below.</div>
+          <div class="actions">
+            <button id="btnLoad">📂 Load Your App…</button>
+            <input id="fileHtml" type="file" accept="text/html,.html" style="display:none" />
+          </div>
+        </div>
+        <iframe id="moodFrame" title="Mood Board"></iframe>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    (function(){
+      const app = document.getElementById('app');
+      const divider = document.getElementById('divider');
+      const dividerW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--divider-w')) || 10;
+      let startX = 0, startLeftPx = 0;
+      function getLeftPx(){
+        const cols = getComputedStyle(app).gridTemplateColumns.split(' ');
+        const left = cols[0];
+        if(left.endsWith('px')) return parseFloat(left);
+        if(left.endsWith('%')) return (parseFloat(left)/100)*window.innerWidth;
+        return document.getElementById('leftPane').getBoundingClientRect().width;
+      }
+      function setLeftPx(px){
+        const total = window.innerWidth;
+        const minPct = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--min-pane')) || 20;
+        const minLeft = (minPct/100)*total; const minRight = (minPct/100)*total;
+        const maxLeft = total - minRight - dividerW;
+        const clamped = Math.max(minLeft, Math.min(maxLeft, px));
+        const pct = (clamped/total)*100;
+        app.style.gridTemplateColumns = pct + '% ' + dividerW + 'px 1fr';
+      }
+      divider.addEventListener('pointerdown', (e)=>{
+        e.preventDefault(); startX = e.clientX; startLeftPx = getLeftPx(); divider.setPointerCapture(e.pointerId); document.body.classList.add('dragging');
+      });
+      divider.addEventListener('pointermove', (e)=>{
+        if(!document.body.classList.contains('dragging')) return; const dx = e.clientX - startX; setLeftPx(startLeftPx + dx);
+      });
+      divider.addEventListener('pointerup', (e)=>{ if(!document.body.classList.contains('dragging')) return; try{divider.releasePointerCapture(e.pointerId)}catch{} document.body.classList.remove('dragging'); });
+      window.addEventListener('resize', ()=> setLeftPx(getLeftPx()));
+    })();
+
+    (function(){
+      const frame = document.getElementById('browserFrame');
+      const urlInput = document.getElementById('urlInput');
+      const goBtn = document.getElementById('goBtn');
+      const backBtn = document.getElementById('backBtn');
+      const reloadBtn = document.getElementById('reloadBtn');
+      const stopBtn = document.getElementById('stopBtn');
+      const historyStack = []; let historyIndex = -1;
+      function normalizeURL(v){
+        let s = (v||'').trim(); if(!s) return '';
+        if(!/^([a-z]+:)?\/\//i.test(s)) s = 'https://' + s; try{ new URL(s); return s; }catch{ return ''; }
+      }
+      function navigateTo(url, push=true){ if(!url) return; frame.src = url; urlInput.value = url; if(push){ historyStack.splice(historyIndex+1); historyStack.push(url); historyIndex = historyStack.length-1; } update(); }
+      function update(){ backBtn.disabled = historyIndex <= 0; }
+      goBtn.addEventListener('click', ()=>{ const u = normalizeURL(urlInput.value); if(u) navigateTo(u,true); });
+      urlInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ const u = normalizeURL(urlInput.value); if(u) navigateTo(u,true); }});
+      backBtn.addEventListener('click', ()=>{ if(historyIndex>0){ historyIndex--; navigateTo(historyStack[historyIndex], false); }});
+      reloadBtn.addEventListener('click', ()=>{ const u = historyStack[historyIndex]; if(u) frame.src = u; });
+      stopBtn.addEventListener('click', ()=>{ try{ frame.contentWindow.stop(); }catch{} });
+      frame.addEventListener('load', ()=>{ try{ const u = frame.contentWindow.location.href; if(u && u!=='about:blank' && historyStack[historyIndex]!==u){ historyStack.push(u); historyIndex = historyStack.length-1; update(); } }catch{} });
+      urlInput.value = 'https://example.com'; navigateTo(urlInput.value, true);
+    })();
+
+    (function(){
+      const dropzone = document.getElementById('dropzone');
+      const input = document.getElementById('fileHtml');
+      const btn = document.getElementById('btnLoad');
+      const frame = document.getElementById('moodFrame');
+      function loadFile(file){
+        if(!file) return; const reader = new FileReader();
+        reader.onload = e => { frame.srcdoc = e.target.result; dropzone.classList.add('hidden'); };
+        reader.readAsText(file);
+      }
+      btn.addEventListener('click', (ev)=>{ ev.preventDefault(); ev.stopPropagation(); input.click(); });
+      input.addEventListener('change', (e)=> loadFile(e.target.files && e.target.files[0]));
+      window.addEventListener('dragover', (e)=>{ e.preventDefault(); });
+      window.addEventListener('drop', (e)=>{ e.preventDefault(); });
+      ['dragenter','dragover'].forEach(evt => dropzone.addEventListener(evt, e=>{ e.preventDefault(); e.dataTransfer.dropEffect='copy'; }));
+      dropzone.addEventListener('drop', (e)=>{ e.preventDefault(); const f = e.dataTransfer.files && e.dataTransfer.files[0]; if(f) loadFile(f); });
+    })();
+  </script>
+</body>
+</html>
