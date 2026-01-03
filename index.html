@@ -25,8 +25,13 @@
     .toolbar { display:grid; grid-template-columns:auto 1fr auto auto auto; gap:8px; align-items:center; padding:10px; border-bottom:1px solid #232833; background:linear-gradient(180deg, rgba(0,0,0,.25), rgba(0,0,0,.12)); position:sticky; top:0; z-index:2; }
     .toolbar button { border:1px solid #242a35; background:#0f1218; color:var(--text); padding:8px 10px; border-radius:10px; cursor:pointer; }
     .toolbar button:hover{ border-color:var(--accent); }
+
+    .toolbar.right { grid-template-columns:auto 1fr auto auto auto auto auto; }
+    .toolbar.left  { grid-template-columns:auto 1fr auto auto auto auto auto; }
+    .toolbar button:disabled { opacity:.45; cursor:not-allowed; border-color:#242a35; }
+    .toolbar .sep { width:1px; height:28px; background:#232833; justify-self:center; }
     .url { width:100%; border:1px solid #242a35; background:#0f1218; color:var(--text); padding:10px 12px; border-radius:10px; outline:none; }
-    iframe.browser { width:100%; height: calc(100% - 58px); border:0; display:block; background:#0a0c0f; }
+    iframe.browser { position:absolute; inset:0; width:100%; height:100%; border:0; display:block; background:#0a0c0f; }
 
     .host { height:100%; display:grid; grid-template-rows:auto 1fr; }
     .host .header { display:flex; align-items:center; gap:10px; padding:10px; border-bottom:1px solid #232833; background:linear-gradient(180deg, rgba(0,0,0,.25), rgba(0,0,0,.12)); position:sticky; top:0; z-index:2; }
@@ -51,37 +56,56 @@
 </head>
 <body>
   <div class="app" id="app">
-    <section class="pane" id="leftPane">
-      <div class="toolbar">
+    <section class="pane host" id="leftPane">
+      <div class="toolbar left">
         <button id="backBtn" title="Back">⟵</button>
         <input id="urlInput" class="url" placeholder="Enter a URL (e.g. https://example.com)" spellcheck="false" />
         <button id="goBtn" title="Go">Go</button>
         <button id="reloadBtn" title="Reload">Reload</button>
         <button id="stopBtn" title="Stop">Stop</button>
+        <button id="leftLoadBtn" title="Load local HTML">📂 Load</button>
+        <button id="leftResetBtn" title="Reset to Home">⟲ Reset</button>
       </div>
-      <iframe id="browserFrame" class="browser" src="about:blank"
-        sandbox="allow-same-origin allow-scripts allow-forms allow-modals allow-popups allow-pointer-lock allow-popups-to-escape-sandbox allow-downloads"
-        referrerpolicy="no-referrer-when-downgrade"
-        allow="clipboard-read; clipboard-write; fullscreen; autoplay; geolocation; microphone; camera; display-capture"></iframe>
+      <div class="stage">
+        <div class="dropzone" id="leftDropzone">
+          <div style="font-weight:600; font-size:18px;">Left panel home</div>
+          <div style="font-size:14px; color:var(--muted)">Open a URL using the address bar above, or load a local HTML file.</div>
+          <div class="actions">
+            <button id="leftBtnBrowseOnline">🌐 Browse Online</button>
+            <button id="leftBtnLoadHome">📂 Load Local HTML…</button>
+            <input id="leftFileHtml" type="file" accept="text/html,.html" style="display:none" />
+          </div>
+        </div>
+        <iframe id="browserFrame" class="browser" src="about:blank"
+          sandbox="allow-same-origin allow-scripts allow-forms allow-modals allow-popups allow-pointer-lock allow-popups-to-escape-sandbox allow-downloads"
+          referrerpolicy="no-referrer-when-downgrade"
+          allow="clipboard-read; clipboard-write; fullscreen; autoplay; geolocation; microphone; camera; display-capture"></iframe>
+      </div>
     </section>
 
     <div class="divider" id="divider"><div class="grab"></div></div>
 
     <section class="pane host" id="rightPane">
-      <div class="header">
-        <h2>WebUI Console</h2>
-        <span class="hint">Drop <code>webUI HTML</code> here or click Load.</span>
+      <div class="toolbar right">
+        <button id="rightBackBtn" title="Back">⟵</button>
+        <input id="rightUrlInput" class="url" placeholder="Enter a URL (e.g. https://example.com)" spellcheck="false" />
+        <button id="rightGoBtn" title="Go">Go</button>
+        <button id="rightReloadBtn" title="Reload">Reload</button>
+        <button id="rightStopBtn" title="Stop">Stop</button>
+        <button id="rightLoadBtn" title="Load local HTML">📂 Load</button>
+        <button id="rightResetBtn" title="Reset to Home">⟲ Reset</button>
       </div>
       <div class="stage">
         <div class="dropzone" id="dropzone">
-          <div style="font-weight:600; font-size:18px;">Load your app</div>
-          <div style="font-size:14px; color:var(--muted)">Drag & drop the HTML file here, or use the button below.</div>
+          <div style="font-weight:600; font-size:18px;">Right panel home</div>
+          <div style="font-size:14px; color:var(--muted)">Open a URL using the address bar above, or load a local HTML file.</div>
           <div class="actions">
-            <button id="btnLoad">📂 Load Your App…</button>
+            <button id="btnBrowseOnline">🌐 Browse Online</button>
+            <button id="btnLoadHome">📂 Load Local HTML…</button>
             <input id="fileHtml" type="file" accept="text/html,.html" style="display:none" />
           </div>
         </div>
-        <iframe id="moodFrame" title="Mood Board"></iframe>
+        <iframe id="moodFrame" title="WebUI Frame"></iframe>
       </div>
     </section>
   </div>
@@ -120,43 +144,317 @@
 
     (function(){
       const frame = document.getElementById('browserFrame');
+      const dropzone = document.getElementById('leftDropzone');
+      const fileInput = document.getElementById('leftFileHtml');
+
       const urlInput = document.getElementById('urlInput');
       const goBtn = document.getElementById('goBtn');
       const backBtn = document.getElementById('backBtn');
       const reloadBtn = document.getElementById('reloadBtn');
       const stopBtn = document.getElementById('stopBtn');
-      const historyStack = []; let historyIndex = -1;
+      const loadBtn = document.getElementById('leftLoadBtn');
+      const resetBtn = document.getElementById('leftResetBtn');
+
+      const btnBrowseOnline = document.getElementById('leftBtnBrowseOnline');
+      const btnLoadHome = document.getElementById('leftBtnLoadHome');
+
+      const historyStack = [];
+      let historyIndex = -1;
+      let lastSrcdoc = '';
+
       function normalizeURL(v){
-        let s = (v||'').trim(); if(!s) return '';
-        if(!/^([a-z]+:)?\/\//i.test(s)) s = 'https://' + s; try{ new URL(s); return s; }catch{ return ''; }
+        let s = (v||'').trim();
+        if(!s) return '';
+        if(!/^([a-z]+:)?\/\//i.test(s)) s = 'https://' + s;
+        try { new URL(s); return s; } catch { return ''; }
       }
-      function navigateTo(url, push=true){ if(!url) return; frame.src = url; urlInput.value = url; if(push){ historyStack.splice(historyIndex+1); historyStack.push(url); historyIndex = historyStack.length-1; } update(); }
-      function update(){ backBtn.disabled = historyIndex <= 0; }
-      goBtn.addEventListener('click', ()=>{ const u = normalizeURL(urlInput.value); if(u) navigateTo(u,true); });
-      urlInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ const u = normalizeURL(urlInput.value); if(u) navigateTo(u,true); }});
-      backBtn.addEventListener('click', ()=>{ if(historyIndex>0){ historyIndex--; navigateTo(historyStack[historyIndex], false); }});
-      reloadBtn.addEventListener('click', ()=>{ const u = historyStack[historyIndex]; if(u) frame.src = u; });
+
+      function update(){
+        backBtn.disabled = historyIndex <= 0;
+      }
+
+      function showHome(){
+        try { frame.removeAttribute('srcdoc'); } catch {}
+        frame.src = 'about:blank';
+        lastSrcdoc = '';
+        historyStack.length = 0;
+        historyIndex = -1;
+        dropzone.classList.remove('hidden');
+        urlInput.value = '';
+        fileInput.value = '';
+        update();
+      }
+
+      function navigateTo(url, push=true){
+        if(!url) return;
+        // Switch to "online" mode
+        try { frame.removeAttribute('srcdoc'); } catch {}
+        lastSrcdoc = '';
+        frame.src = url;
+        dropzone.classList.add('hidden');
+        urlInput.value = url;
+        if(push){
+          historyStack.splice(historyIndex + 1);
+          historyStack.push(url);
+          historyIndex = historyStack.length - 1;
+        }
+        update();
+      }
+
+      function loadFile(file){
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = e => {
+          const content = e.target.result || '';
+          // Switch to "local" mode
+          frame.src = 'about:blank';
+          frame.srcdoc = content;
+          lastSrcdoc = content;
+          dropzone.classList.add('hidden');
+          urlInput.value = '';
+          historyStack.length = 0;
+          historyIndex = -1;
+          update();
+        };
+        reader.readAsText(file);
+      }
+
+      // Toolbar: online navigation
+      goBtn.addEventListener('click', ()=>{
+        const u = normalizeURL(urlInput.value);
+        if(u) navigateTo(u, true);
+      });
+      urlInput.addEventListener('keydown', (e)=>{
+        if(e.key === 'Enter'){
+          const u = normalizeURL(urlInput.value);
+          if(u) navigateTo(u, true);
+        }
+      });
+      backBtn.addEventListener('click', ()=>{
+        if(historyIndex > 0){
+          historyIndex--;
+          navigateTo(historyStack[historyIndex], false);
+        }
+      });
+      reloadBtn.addEventListener('click', ()=>{
+        if(lastSrcdoc){
+          frame.srcdoc = lastSrcdoc;
+        } else if(historyIndex >= 0){
+          frame.src = historyStack[historyIndex];
+        } else {
+          showHome();
+        }
+      });
       stopBtn.addEventListener('click', ()=>{ try{ frame.contentWindow.stop(); }catch{} });
-      frame.addEventListener('load', ()=>{ try{ const u = frame.contentWindow.location.href; if(u && u!=='about:blank' && historyStack[historyIndex]!==u){ historyStack.push(u); historyIndex = historyStack.length-1; update(); } }catch{} });
-      urlInput.value = 'https://example.com'; navigateTo(urlInput.value, true);
+
+      // Load / Reset
+      function openPicker(ev){
+        if(ev){ ev.preventDefault(); ev.stopPropagation(); }
+        fileInput.click();
+      }
+      btnLoadHome.addEventListener('click', openPicker);
+      loadBtn.addEventListener('click', openPicker);
+      fileInput.addEventListener('change', (e)=> loadFile(e.target.files && e.target.files[0]));
+
+      btnBrowseOnline.addEventListener('click', (ev)=>{
+        ev.preventDefault();
+        ev.stopPropagation();
+        const candidate = normalizeURL(urlInput.value) || 'https://example.com';
+        urlInput.value = candidate;
+        navigateTo(candidate, true);
+        urlInput.focus();
+        urlInput.select();
+      });
+
+      resetBtn.addEventListener('click', showHome);
+
+      // Drag & drop for local HTML
+      ['dragenter','dragover'].forEach(evt =>
+        dropzone.addEventListener(evt, e=>{ e.preventDefault(); e.dataTransfer.dropEffect='copy'; })
+      );
+      dropzone.addEventListener('drop', (e)=>{
+        e.preventDefault();
+        const f = e.dataTransfer.files && e.dataTransfer.files[0];
+        if(f) loadFile(f);
+      });
+
+      // Try to capture navigations from within the iframe (best-effort; may fail cross-origin)
+      frame.addEventListener('load', ()=>{
+        if(lastSrcdoc) return;
+        try{
+          const u = frame.contentWindow.location.href;
+          if(u && u !== 'about:blank' && historyStack[historyIndex] !== u){
+            historyStack.push(u);
+            historyIndex = historyStack.length - 1;
+            urlInput.value = u;
+            update();
+          }
+        }catch{}
+      });
+
+      // Start at home
+      showHome();
     })();
 
     (function(){
       const dropzone = document.getElementById('dropzone');
       const input = document.getElementById('fileHtml');
-      const btn = document.getElementById('btnLoad');
       const frame = document.getElementById('moodFrame');
+
+      const btnLoadHome = document.getElementById('btnLoadHome');
+      const btnBrowseOnline = document.getElementById('btnBrowseOnline');
+      const btnLoadTop = document.getElementById('rightLoadBtn');
+      const resetBtn = document.getElementById('rightResetBtn');
+
+      const urlInput = document.getElementById('rightUrlInput');
+      const goBtn = document.getElementById('rightGoBtn');
+      const backBtn = document.getElementById('rightBackBtn');
+      const reloadBtn = document.getElementById('rightReloadBtn');
+      const stopBtn = document.getElementById('rightStopBtn');
+
+      const historyStack = [];
+      let historyIndex = -1;
+      let lastSrcdoc = '';
+
+      function normalizeURL(v){
+        let s = (v||'').trim();
+        if(!s) return '';
+        if(!/^([a-z]+:)?\/\//i.test(s)) s = 'https://' + s;
+        try { new URL(s); return s; } catch { return ''; }
+      }
+
+      function update(){
+        backBtn.disabled = historyIndex <= 0;
+      }
+
+      function showHome(){
+        // Clear everything and return to chooser
+        try { frame.removeAttribute('srcdoc'); } catch {}
+        frame.src = 'about:blank';
+        lastSrcdoc = '';
+        historyStack.length = 0;
+        historyIndex = -1;
+        dropzone.classList.remove('hidden');
+        urlInput.value = '';
+        input.value = '';
+        update();
+      }
+
+      function navigateTo(url, push=true){
+        if(!url) return;
+        // Ensure we're in "online" mode
+        try { frame.removeAttribute('srcdoc'); } catch {}
+        lastSrcdoc = '';
+        frame.src = url;
+        dropzone.classList.add('hidden');
+        urlInput.value = url;
+        if(push){
+          historyStack.splice(historyIndex + 1);
+          historyStack.push(url);
+          historyIndex = historyStack.length - 1;
+        }
+        update();
+      }
+
       function loadFile(file){
-        if(!file) return; const reader = new FileReader();
-        reader.onload = e => { frame.srcdoc = e.target.result; dropzone.classList.add('hidden'); };
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = e => {
+          const content = e.target.result || '';
+          // Ensure we're in "local" mode
+          frame.src = 'about:blank';
+          frame.srcdoc = content;
+          lastSrcdoc = content;
+          dropzone.classList.add('hidden');
+          urlInput.value = '';
+          historyStack.length = 0;
+          historyIndex = -1;
+          update();
+        };
         reader.readAsText(file);
       }
-      btn.addEventListener('click', (ev)=>{ ev.preventDefault(); ev.stopPropagation(); input.click(); });
+
+      // Toolbar: online navigation
+      goBtn.addEventListener('click', ()=>{
+        const u = normalizeURL(urlInput.value);
+        if(u) navigateTo(u, true);
+      });
+      urlInput.addEventListener('keydown', (e)=>{
+        if(e.key === 'Enter'){
+          const u = normalizeURL(urlInput.value);
+          if(u) navigateTo(u, true);
+        }
+      });
+      backBtn.addEventListener('click', ()=>{
+        if(historyIndex > 0){
+          historyIndex--;
+          navigateTo(historyStack[historyIndex], false);
+        }
+      });
+      reloadBtn.addEventListener('click', ()=>{
+        if(lastSrcdoc){
+          frame.srcdoc = lastSrcdoc; // re-render local app
+        } else if(historyIndex >= 0){
+          frame.src = historyStack[historyIndex];
+        } else {
+          // Nothing loaded yet; show home
+          showHome();
+        }
+      });
+      stopBtn.addEventListener('click', ()=>{ try{ frame.contentWindow.stop(); }catch{} });
+
+      // Home / Reset
+      resetBtn.addEventListener('click', showHome);
+
+      // Load local HTML (both home button + top bar)
+      function openPicker(ev){
+        if(ev){ ev.preventDefault(); ev.stopPropagation(); }
+        input.click();
+      }
+      btnLoadHome.addEventListener('click', openPicker);
+      btnLoadTop.addEventListener('click', openPicker);
       input.addEventListener('change', (e)=> loadFile(e.target.files && e.target.files[0]));
+
+      // Home button: browse online
+      btnBrowseOnline.addEventListener('click', (ev)=>{
+        ev.preventDefault();
+        ev.stopPropagation();
+        const candidate = normalizeURL(urlInput.value) || 'https://example.com';
+        urlInput.value = candidate;
+        navigateTo(candidate, true);
+        urlInput.focus();
+        urlInput.select();
+      });
+
+      // Drag & drop for local HTML
       window.addEventListener('dragover', (e)=>{ e.preventDefault(); });
       window.addEventListener('drop', (e)=>{ e.preventDefault(); });
-      ['dragenter','dragover'].forEach(evt => dropzone.addEventListener(evt, e=>{ e.preventDefault(); e.dataTransfer.dropEffect='copy'; }));
-      dropzone.addEventListener('drop', (e)=>{ e.preventDefault(); const f = e.dataTransfer.files && e.dataTransfer.files[0]; if(f) loadFile(f); });
+
+      ['dragenter','dragover'].forEach(evt =>
+        dropzone.addEventListener(evt, e=>{ e.preventDefault(); e.dataTransfer.dropEffect='copy'; })
+      );
+      dropzone.addEventListener('drop', (e)=>{
+        e.preventDefault();
+        const f = e.dataTransfer.files && e.dataTransfer.files[0];
+        if(f) loadFile(f);
+      });
+
+      // Try to capture navigations from within the iframe (best-effort; may fail cross-origin)
+      frame.addEventListener('load', ()=>{
+        if(lastSrcdoc) return; // ignore local loads
+        try{
+          const u = frame.contentWindow.location.href;
+          if(u && u !== 'about:blank' && historyStack[historyIndex] !== u){
+            historyStack.push(u);
+            historyIndex = historyStack.length - 1;
+            urlInput.value = u;
+            update();
+          }
+        }catch{}
+      });
+
+      // Start at home
+      showHome();
     })();
   </script>
 </body>
